@@ -1,0 +1,220 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                    String                 @id
+  name                  String
+  email                 String
+  emailVerified         Boolean                @default(false)
+  image                 String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  sessions              Session[]
+  accounts              Account[]
+  providerConnections   ProviderConnection[]
+  transferJobs          TransferJob[]
+  fieldMappingTemplates FieldMappingTemplate[]
+  auditLogs             AuditLog[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+enum ProviderType {
+  notion
+  trello
+  asana
+  linear
+}
+
+enum ConnectionStatus {
+  active
+  expired
+  revoked
+}
+
+model ProviderConnection {
+  id             String           @id @default(uuid())
+  userId         String
+  provider       ProviderType
+  accessToken    String
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  workspaceId    String
+  workspaceName  String
+  status         ConnectionStatus @default(active)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceTransferJobs TransferJob[] @relation("SourceConnection")
+  destTransferJobs   TransferJob[] @relation("DestConnection")
+
+  @@index([userId])
+  @@index([provider])
+  @@index([status])
+  @@map("provider_connection")
+}
+
+enum TransferJobStatus {
+  pending
+  running
+  done
+  failed
+}
+
+model TransferJob {
+  id                 String            @id @default(uuid())
+  userId             String
+  sourceConnectionId String
+  destConnectionId   String
+  status             TransferJobStatus @default(pending)
+  totalTasks         Int               @default(0)
+  processedTasks     Int               @default(0)
+  failedTasks        Int               @default(0)
+  bullJobId          String?
+  options            Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceConnection ProviderConnection @relation("SourceConnection", fields: [sourceConnectionId], references: [id], onDelete: Cascade)
+  destConnection   ProviderConnection @relation("DestConnection", fields: [destConnectionId], references: [id], onDelete: Cascade)
+  taskResults      TaskResult[]
+
+  @@index([userId])
+  @@index([sourceConnectionId])
+  @@index([destConnectionId])
+  @@index([status])
+  @@map("transfer_job")
+}
+
+enum TaskResultStatus {
+  success
+  failed
+  skipped
+}
+
+model TaskResult {
+  id            String           @id @default(uuid())
+  transferJobId String
+  sourceTaskId  String
+  destTaskId    String?
+  status        TaskResultStatus @default(success)
+  errorMessage  String?
+  retries       Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  transferJob TransferJob @relation(fields: [transferJobId], references: [id], onDelete: Cascade)
+
+  @@index([transferJobId])
+  @@index([sourceTaskId])
+  @@index([destTaskId])
+  @@map("task_result")
+}
+
+model FieldMappingTemplate {
+  id             String       @id @default(uuid())
+  userId         String
+  name           String
+  sourceProvider ProviderType
+  destProvider   ProviderType
+  mappings       Json
+  isDefault      Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sourceProvider, destProvider])
+  @@map("field_mapping_template")
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+  transfer
+  login
+  logout
+  connection_created
+  connection_revoked
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String
+  action     AuditAction
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_log")
+}
